@@ -1,0 +1,4 @@
+google-adk>=1.0.0
+python-dotenv>=1.0.0
+# Optional — only for the web test console (web_test.py)
+streamlit>=1.30.0

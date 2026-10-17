@@ -1,0 +1,15 @@
+# Never commit secrets
+.env
+ask_ele/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Test transcripts
+results/
+
+# ADK local session db
+.adk/
