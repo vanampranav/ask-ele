@@ -29,7 +29,8 @@ import streamlit as st  # noqa: E402
 # environment BEFORE the agent is imported (which configures the model).
 try:
     for _k in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "ELE_MODEL",
-               "GOOGLE_GENAI_USE_VERTEXAI"):
+               "GOOGLE_GENAI_USE_VERTEXAI",
+               "FIREBASE_API_KEY", "FIREBASE_SERVICE_ACCOUNT"):
         if not os.environ.get(_k) and _k in st.secrets:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:
