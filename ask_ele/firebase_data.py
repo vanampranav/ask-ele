@@ -151,23 +151,114 @@ def get_measurements(uid: str, limit: int = 8) -> dict:
     return {"status": "success", "count": len(docs), "latest": rows[-1], "recent": rows}
 
 
+# How each scoring mode earns points — so Ele can explain "how do I improve?".
+_SCORING_EXPLAINER = {
+    "bodyComposition":
+        "Points come only from body-composition change at each approved "
+        "check-in: body-fat % lost (weighted 50%), weight lost (30%), and muscle "
+        "gained (20%), scaled x10. Improving beyond your personal best earns new "
+        "points; a worse week adds nothing but never subtracts.",
+    "bodyCompositionPlusActivity":
+        "Body-composition points (body-fat 50% / weight 30% / muscle 20%, x10) "
+        "PLUS daily activity: +1 each day you hit your protein goal and +1 for "
+        "completing a workout.",
+    "bodyCompositionPlusActivitySteps":
+        "Body-composition points (body-fat 50% / weight 30% / muscle 20%, x10) "
+        "PLUS daily activity: +1 for hitting your protein goal, +1 for 7,000 "
+        "steps, and a weekly bonus for working out on 4 different days.",
+}
+
+
+def _dt(v):
+    """Best-effort ISO string from a Firestore timestamp / value."""
+    try:
+        return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
+    except Exception:
+        return None
+
+
 def get_challenge(uid: str) -> dict:
-    """The user's challenge participation (points, status, eligibility)."""
+    """The user's challenge status, enriched with the challenge details, their
+    leaderboard standing, and the top of the board. Read-only; the logged-in
+    user's own data + the PUBLIC (already-sanitized) leaderboard only."""
     db = _ensure_admin()
     parts = [d.to_dict() for d in
              db.collection("challengeParticipants").where("userId", "==", uid).stream()]
     if not parts:
         return {"status": "unavailable", "message": "Not in any challenge."}
-    p = parts[-1]  # most relevant / latest
-    return {
+    p = parts[-1]
+    cid = p.get("challengeId")
+
+    out = {
         "status": "success",
-        "challenge_id": p.get("challengeId"),
+        "challenge_id": cid,
         "participant_status": p.get("status"),
         "activity_points": p.get("activityPoints"),
         "payment_status": p.get("paymentStatus"),
         "eligible_for_prizes": p.get("eligibleForPrizes"),
         "baseline_submitted": p.get("baselineSubmitted"),
     }
+    if not cid:
+        return out
+
+    # 1) Challenge details (dates, status, scoring, prizes, rules).
+    try:
+        c = db.collection("challenges").document(cid).get()
+        if c.exists:
+            cd = c.to_dict()
+            mode = cd.get("scoringMode", "bodyComposition")
+            out["challenge"] = {
+                "title": cd.get("title"),
+                "status": cd.get("status"),
+                "start_date": _dt(cd.get("startDate")),
+                "end_date": _dt(cd.get("endDate")),
+                "prize": cd.get("prizeDescription"),
+                "rules_summary": cd.get("rulesSummary"),
+                "scoring_mode": mode,
+                "how_scoring_works": _SCORING_EXPLAINER.get(mode),
+            }
+    except Exception:
+        pass
+
+    # 2) The user's own standing + the top of the board (public leaderboard).
+    try:
+        board = sorted(
+            [d.to_dict() for d in
+             db.collection("challenges").document(cid).collection("leaderboard").stream()],
+            key=lambda s: s.get("motivationalScore", 0) or 0, reverse=True)
+        if board:
+            out["total_participants"] = len(board)
+            # Ranked list of names + scores (public leaderboard is already
+            # sanitized for display, so this is safe to surface).
+            out["top3"] = [
+                {"rank": i + 1, "name": s.get("displayName"),
+                 "score": round(s.get("motivationalScore", 0) or 0, 1)}
+                for i, s in enumerate(board[:3])
+            ]
+            for i, s in enumerate(board):
+                if s.get("userId") == uid:
+                    rank = i + 1
+                    my_score = round(s.get("motivationalScore", 0) or 0, 1)
+                    gap = None
+                    if rank > 1:
+                        gap = round((board[i - 1].get("motivationalScore", 0) or 0)
+                                    - (s.get("motivationalScore", 0) or 0), 1)
+                    out["my_standing"] = {
+                        "rank": rank,
+                        "score": my_score,
+                        "points_behind_next_rank": gap,
+                        "official_score": s.get("officialScore"),
+                        "body_fat_change_pct": round(s.get("bodyFatChangePercent", 0) or 0, 1),
+                        "weight_loss_pct": round(s.get("weightLossPercent", 0) or 0, 1),
+                        "muscle_gain_pct": round(s.get("muscleGainPercent", 0) or 0, 1),
+                        "latest_checkin": s.get("latestSubmissionLabel"),
+                        "last_updated": _dt(s.get("lastUpdated")),
+                    }
+                    break
+    except Exception:
+        pass
+
+    return out
 
 
 # ── Tools (bound to the current logged-in user) ──────────────────────────────
@@ -185,9 +276,13 @@ def get_my_measurements() -> dict:
 
 
 def get_my_challenge() -> dict:
-    """Fetch the user's current fitness-challenge status: their activity points,
-    participation status, payment status, and prize eligibility. Use this for any
-    question about their challenge, points, or ranking."""
+    """Fetch the user's full fitness-challenge picture — use this for ANY
+    challenge question. Returns: their activity points, participant/payment
+    status and prize eligibility; the challenge's title, start/end dates, prize,
+    rules and how scoring works; their leaderboard rank, score, points behind the
+    next rank, and their body-fat/weight/muscle progress; plus the top 3 of the
+    board. Covers 'what's my rank/score', 'when does it end', 'what are the
+    prizes/rules', 'how do I earn more points', and 'who's winning'."""
     uid = current_uid()
     if not uid:
         return {"status": "unavailable", "message": "User not signed in."}
