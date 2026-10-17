@@ -36,6 +36,19 @@ class LocalStubProvider:
         }
 
 
+class FirebaseProfileProvider:
+    """Reads the signed-in user's real profile from Firebase (via
+    firebase_data.get_profile). Set this at login: set_profile_provider(
+    FirebaseProfileProvider(uid))."""
+
+    def __init__(self, uid: str):
+        self.uid = uid
+
+    def fetch(self) -> dict:
+        from . import firebase_data  # local import to keep the stub path dep-free
+        return firebase_data.get_profile(self.uid)
+
+
 # The active provider. In production, call set_profile_provider() at startup
 # with a real backend provider (Firebase/REST) that implements .fetch().
 _provider: ProfileProvider = LocalStubProvider()

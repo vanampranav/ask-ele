@@ -2,3 +2,6 @@ google-adk>=1.0.0
 python-dotenv>=1.0.0
 # Optional — only for the web test console (web_test.py)
 streamlit>=1.30.0
+# Real Elefit data (Phase 4, Step 1): Firebase Admin reads + REST login
+firebase-admin>=6.5.0
+requests>=2.31.0

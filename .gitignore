@@ -10,6 +10,3 @@ venv/
 
 # Test transcripts
 results/
-
-# ADK local session db
-.adk/

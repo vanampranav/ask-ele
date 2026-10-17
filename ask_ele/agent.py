@@ -12,6 +12,7 @@ from google.genai import types
 from .prompt import ELE_INSTRUCTION
 from .guardrails import before_model_guardrail, after_model_guardrail
 from .profile import get_my_profile
+from .firebase_data import get_my_measurements, get_my_challenge
 from .fitness_tools import (
     calculate_bmi,
     calculate_bmr_tdee,
@@ -64,6 +65,8 @@ root_agent = Agent(
     after_model_callback=after_model_guardrail,
     tools=[
         get_my_profile,
+        get_my_measurements,
+        get_my_challenge,
         calculate_bmi,
         calculate_bmr_tdee,
         calculate_macros,

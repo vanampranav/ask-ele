@@ -40,7 +40,8 @@ from google.adk.sessions import InMemorySessionService  # noqa: E402
 from google.genai import types  # noqa: E402
 
 from ask_ele.agent import root_agent  # noqa: E402
-from ask_ele.profile import set_profile_provider  # noqa: E402
+from ask_ele.profile import set_profile_provider, FirebaseProfileProvider  # noqa: E402
+from ask_ele.firebase_data import verify_login, set_current_uid  # noqa: E402
 
 APP_NAME, USER_ID, SESSION_ID = "ask_ele", "tester", "web"
 
@@ -117,8 +118,35 @@ def _reset_chat():
 
 
 with st.sidebar:
-    st.header("👤 User profile")
-    st.caption("Ele fetches this via `get_my_profile()` — edit and re-ask.")
+    st.header("🔐 Account")
+    if st.session_state.get("uid"):
+        st.success(f"Logged in: {st.session_state.get('email')}")
+        st.caption("Ele is using your REAL Elefit data (profile, measurements, "
+                   "challenge).")
+        if st.button("Log out", use_container_width=True):
+            st.session_state.pop("uid", None)
+            st.session_state.pop("email", None)
+            _reset_chat()
+            st.rerun()
+    else:
+        st.caption("Log in with your Elefit account to use your real data — "
+                   "or use the manual profile below.")
+        with st.form("login"):
+            li_email = st.text_input("Email")
+            li_pw = st.text_input("Password", type="password")
+            if st.form_submit_button("Log in", use_container_width=True):
+                res = verify_login(li_email.strip(), li_pw)
+                if res.get("status") == "success":
+                    st.session_state.uid = res["uid"]
+                    st.session_state.email = res.get("email", li_email)
+                    _reset_chat()
+                    st.rerun()
+                else:
+                    st.error(res.get("message", "Login failed"))
+
+    st.divider()
+    st.header("👤 Manual profile")
+    st.caption("Used only when you're NOT logged in.")
     name = st.text_input("Name", "Alex")
     weight = st.number_input("Weight (kg)", 30.0, 300.0, 80.0, 0.5)
     height = st.number_input("Height (cm)", 100.0, 250.0, 178.0, 0.5)
@@ -132,11 +160,17 @@ with st.sidebar:
     st.button("🔄 Reset chat", on_click=_reset_chat, use_container_width=True)
     st.caption(f"Model: {os.environ.get('ELE_MODEL', 'gemini-flash-lite-latest')}")
 
-# Apply the current sidebar profile to the tool's provider on every run.
-set_profile_provider(_DictProvider({
-    "name": name, "weight_kg": weight, "height_cm": height, "age": int(age),
-    "sex": sex, "activity_level": activity, "goal": goal,
-}))
+# Pick the data source for THIS run: real Firebase data when logged in, else the
+# manual stub profile. (Re-set every run so the agent's tools use the right user.)
+if st.session_state.get("uid"):
+    set_current_uid(st.session_state["uid"])
+    set_profile_provider(FirebaseProfileProvider(st.session_state["uid"]))
+else:
+    set_current_uid(None)
+    set_profile_provider(_DictProvider({
+        "name": name, "weight_kg": weight, "height_cm": height, "age": int(age),
+        "sex": sex, "activity_level": activity, "goal": goal,
+    }))
 
 st.title("💪 Ask Ele — test console")
 st.caption("Set the profile on the left, then ask away. Tool calls show under "
