@@ -182,8 +182,13 @@ def get_challenge(uid: str) -> dict:
     leaderboard standing, and the top of the board. Read-only; the logged-in
     user's own data + the PUBLIC (already-sanitized) leaderboard only."""
     db = _ensure_admin()
+    from google.cloud.firestore_v1.base_query import FieldFilter
+    # Participants live in the SUBCOLLECTION challenges/{id}/participants/{uid}
+    # (not the legacy top-level `challengeParticipants`). A collection-group query
+    # finds this user's participation across all challenges.
     parts = [d.to_dict() for d in
-             db.collection("challengeParticipants").where("userId", "==", uid).stream()]
+             db.collection_group("participants")
+               .where(filter=FieldFilter("userId", "==", uid)).stream()]
     if not parts:
         return {"status": "unavailable", "message": "Not in any challenge."}
     p = parts[-1]
